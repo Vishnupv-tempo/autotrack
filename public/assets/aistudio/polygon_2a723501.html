@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Interactive Polygon Tool Canvas Proto - Markers</title>
+  <style>
+    body { background: #0e0e0e; color: white; font-family: "Segoe UI"; display: flex; flex-direction: column; align-items: center; }
+    canvas { border: 1px solid #333; background: white; cursor: crosshair; margin-bottom: 20px; } /* White canvas for pitch sim */
+    .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; width: 300px; }
+    .controls label { display: flex; justify-content: space-between; align-items: center; font-size: 13px; }
+    .section-title { grid-column: 1 / -1; text-align: center; font-weight: bold; opacity: 0.9; }
+    button { background: #ff003c; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; }
+    button.active { background: #ff6b6b; }
+  </style>
+</head>
+<body>
+  <canvas id="canvas" width="600" height="400"></canvas>
+  <div class="controls">
+    <div class="section-title">Tools</div>
+    <button id="arrowBtn">Arrow</button>
+    <button id="polygonBtn" class="active">Polygon</button>
+    <div class="section-title">Polygon Props (Set Before Draw)</div>
+    <label>Border Color <input type="color" id="borderColor" value="#ff003c"></label>
+    <label>Border Thickness <input type="range" id="borderThickness" min="1" max="10" value="3"></label>
+    <label>Dashed Border <input type="checkbox" id="dashedBorder"></label>
+    <label>Fill Color <input type="color" id="fillColor" value="#ff003c20"></label>
+    <label>Fill Opacity <input type="range" id="fillOpacity" min="0" max="1" step="0.1" value="0.2"></label>
+    <label>Marker Size <input type="range" id="markerSize" min="3" max="10" value="5"></label>
+    <button id="undo">Undo</button>
+    <button id="clear">Clear</button>
+  </div>
+  <script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    let currentTool = 'polygon'; // Default
+    let polygons = []; // Stack for multiples
+    let currentVertices = []; // For active poly
+    let isDrawing = false;
+    let lastClickTime = 0;
+    let doubleClickThreshold = 200; // ms
+
+    // Tool toggle
+    document.getElementById('polygonBtn').addEventListener('click', () => setTool('polygon'));
+    document.getElementById('arrowBtn').addEventListener('click', () => setTool('arrow')); // Placeholder
+
+    function setTool(tool) {
+      currentTool = tool;
+      document.querySelectorAll('button').forEach(btn => btn.classList.remove('active'));
+      document.getElementById(tool + 'Btn').classList.add('active');
+      if (currentVertices.length > 0) { currentVertices = []; redraw(); } // Cancel mid-draw
+    }
+
+    canvas.addEventListener('click', (e) => {
+      if (currentTool !== 'polygon') return;
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left, y = e.clientY - rect.top;
+      const now = Date.now();
+      if (now - lastClickTime < doubleClickThreshold && currentVertices.length > 2) {
+        // Double-click: Close polygon
+        if (currentVertices.length > 0) {
+          const props = getProps();
+          polygons.push({vertices: [...currentVertices, currentVertices[0]], props}); // Close loop
+          currentVertices = [];
+          isDrawing = false;
+          redraw();
+        }
+      } else {
+        // Single click: Add vertex (marker + preview line if >1)
+        currentVertices.push({x, y});
+        isDrawing = true;
+        redraw();
+      }
+      lastClickTime = now;
+    });
+
+    canvas.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      if (currentTool === 'polygon' && currentVertices.length > 0) {
+        currentVertices = []; // Right-click cancel
+        redraw();
+      }
+    });
+
+    function getProps() {
+      return {
+        borderColor: document.getElementById('borderColor').value,
+        borderThickness: parseInt(document.getElementById('borderThickness').value),
+        dashedBorder: document.getElementById('dashedBorder').checked,
+        fillColor: document.getElementById('fillColor').value,
+        fillOpacity: parseFloat(document.getElementById('fillOpacity').value),
+        markerSize: parseInt(document.getElementById('markerSize').value)
+      };
+    }
+
+    // Update props live (for preview)
+    document.querySelectorAll('#borderColor, #borderThickness, #dashedBorder, #fillColor, #fillOpacity, #markerSize').forEach(el => {
+      el.addEventListener('input', redraw);
+    });
+
+    function drawPolygon(poly, isPreview = false) {
+      const {vertices, props} = poly;
+      if (vertices.length < 3) return;
+
+      ctx.beginPath();
+      ctx.moveTo(vertices[0].x, vertices[0].y);
+      for (let i = 1; i < vertices.length; i++) {
+        ctx.lineTo(vertices[i].x, vertices[i].y);
+      }
+      ctx.closePath();
+
+      // Fill
+      ctx.globalAlpha = props.fillOpacity;
+      ctx.fillStyle = props.fillColor;
+      ctx.fill();
+
+      // Border
+      ctx.globalAlpha = isPreview ? 0.5 : 1;
+      ctx.strokeStyle = props.borderColor;
+      ctx.lineWidth = props.borderThickness;
+      ctx.setLineDash(props.dashedBorder ? [5, 5] : []);
+      ctx.stroke();
+
+      // Markers (dots) for vertices
+      ctx.globalAlpha = isPreview ? 0.5 : 1;
+      ctx.fillStyle = props.borderColor;
+      vertices.forEach(v => {
+        ctx.beginPath();
+        ctx.arc(v.x, v.y, props.markerSize, 0, 2 * Math.PI);
+        ctx.fill();
+        // Glow border
+        ctx.strokeStyle = 'white';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      });
+
+      ctx.globalAlpha = 1;
+      ctx.setLineDash([]);
+    }
+
+    function redraw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      polygons.forEach(poly => drawPolygon(poly));
+      // Preview current: Markers + lines from click 1
+      if (currentVertices.length > 0) {
+        const props = getProps();
+        // Draw markers for all current vertices
+        ctx.fillStyle = props.borderColor;
+        currentVertices.forEach(v => {
+          ctx.beginPath();
+          ctx.arc(v.x, v.y, props.markerSize, 0, 2 * Math.PI);
+          ctx.globalAlpha = 0.7; // Semi for preview
+          ctx.fill();
+          // Glow border
+          ctx.strokeStyle = 'white';
+          ctx.lineWidth = 1;
+          ctx.globalAlpha = 1;
+          ctx.stroke();
+        });
+        ctx.globalAlpha = 0.7;
+        // Draw lines if >1 vertices
+        if (currentVertices.length > 1) {
+          ctx.beginPath();
+          ctx.moveTo(currentVertices[0].x, currentVertices[0].y);
+          for (let i = 1; i < currentVertices.length; i++) {
+            ctx.lineTo(currentVertices[i].x, currentVertices[i].y);
+          }
+          ctx.strokeStyle = props.borderColor;
+          ctx.lineWidth = props.borderThickness;
+          ctx.setLineDash(props.dashedBorder ? [5, 5] : []);
+          ctx.stroke();
+          // Preview close line if >2
+          if (currentVertices.length > 2) {
+            ctx.moveTo(currentVertices[currentVertices.length - 1].x, currentVertices[currentVertices.length - 1].y);
+            ctx.lineTo(currentVertices[0].x, currentVertices[0].y);
+            ctx.stroke();
+          }
+        }
+        ctx.globalAlpha = 1;
+        ctx.setLineDash([]);
+      }
+    }
+
+    document.getElementById('undo').addEventListener('click', () => {
+      if (polygons.length > 0) {
+        polygons.pop();
+        redraw();
+      }
+    });
+
+    document.getElementById('clear').addEventListener('click', () => {
+      polygons = [];
+      currentVertices = [];
+      redraw();
+    });
+
+    // Initial draw
+    redraw();
+  </script>
+</body>
+</html>

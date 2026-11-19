@@ -1,0 +1,85 @@
+@import "tailwindcss";
+
+@layer base {
+  html {
+    font-size: 13px;
+  }
+
+  :root {
+    --font-display: 'Outfit', system-ui, -apple-system, sans-serif;
+    --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    background-color: #0b0f14;
+    color: #f1f5f9;
+  }
+
+  h1, h2, h3, .font-display {
+    font-family: var(--font-display);
+  }
+
+  .font-mono, .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* Custom sleek dark scrollbar */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #243040;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #33445a;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Range input styling for tactical timeline and sliders */
+input[type="range"].pitch-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+input[type="range"].pitch-slider::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 2px;
+  background: #243040;
+}
+
+input[type="range"].pitch-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 9999px;
+  background: #10b981;
+  border: 1.5px solid #0b0f14;
+  margin-top: -3.5px;
+  transition: transform 150ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+input[type="range"].pitch-slider:hover::-webkit-slider-thumb {
+  transform: scale(1.15);
+}

@@ -1,0 +1,8 @@
+{
+  "name": "Remix player detect and tracking impolemented",
+  "description": "Football match video player with OPFS storage and real-time computer vision player circle tracking.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

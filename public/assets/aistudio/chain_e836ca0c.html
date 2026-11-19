@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Telestration Ring — Tilt + Color + Spin + Connected</title>
+<style>
+  :root{
+    --bg: #0b6623; /* pitch background */
+  }
+  html,body{ height:100%; margin:0; background:var(--bg); font-family:Arial,Helvetica,sans-serif; overflow:hidden; }
+
+  /* Control panel */
+  .controller{
+    position: fixed;
+    left:50%;
+    bottom:18px;
+    transform:translateX(-50%);
+    display:flex;
+    gap:14px;
+    align-items:center;
+    background: rgba(0,0,0,0.44);
+    color:#fff;
+    padding:10px 14px;
+    border-radius:10px;
+    user-select:none;
+    z-index:1000;
+  }
+  .controller input[type="range"]{ vertical-align:middle; }
+  .controller input[type="color"]{ width:34px; height:34px; border-radius:6px; padding:0; border:none; cursor:pointer; }
+
+  /* 3D plane for all rings and connectors */
+  #plane{
+    position:absolute;
+    inset:0;
+    transform-style:preserve-3d;
+    pointer-events:none;
+  }
+
+  /* ring wrapper */
+  .ring{
+    position:absolute;
+    width:120px;
+    height:120px;
+    transform-style:preserve-3d;
+    pointer-events:auto;
+  }
+
+  /* connector line between rings */
+  .connector{
+    position:absolute;
+    height:12px;
+    transform-origin:left center;
+    border-radius:6px;
+    pointer-events:none;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    filter: drop-shadow(0 0 6px rgba(0,234,255,0.25));
+  }
+
+  /* rotating fill (visible ring area) */
+  .ring .fill{
+    position:absolute;
+    inset:0;
+    border-radius:50%;
+    animation:premiumSpin 2.5s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite; /* smooth premium easing */
+    overflow:visible;
+    filter: drop-shadow(0 0 8px rgba(0,234,255,0.3));
+    transition: filter 0.3s ease;
+  }
+  
+  .ring .fill:hover{
+    filter: drop-shadow(0 0 16px rgba(0,234,255,0.5));
+  }
+
+  /* inner hole to make donut / ring */
+  .ring .hole{
+    position:absolute;
+    inset:24px;            /* ring thickness */
+    border-radius:50%;
+    background:var(--bg);
+    pointer-events:none;
+  }
+
+  /* optional outer stroke (same color as fill's main color) */
+  .ring .stroke {
+    position:absolute;
+    inset:0;
+    border-radius:50%;
+    box-shadow: 0 0 0 2px rgba(255,255,255,0.15) inset, 
+                0 4px 12px rgba(0,0,0,0.2); /* enhanced depth */
+    pointer-events:none;
+    opacity:0.8;
+  }
+
+  @keyframes premiumSpin{
+    0%{ transform: rotate(0deg); }
+    100%{ transform: rotate(360deg); }
+  }
+  
+  /* entrance animation for new rings */
+  @keyframes ringEntrance{
+    0%{ 
+      transform: scale(0.3);
+      opacity:0;
+    }
+    60%{
+      transform: scale(1.08);
+    }
+    100%{ 
+      transform: scale(1);
+      opacity:1;
+    }
+  }
+
+  /* small helper so controls don't create rings when clicked */
+  .controller * { pointer-events: auto; }
+</style>
+</head>
+<body>
+
+<!-- Controls -->
+<div class="controller">
+  Tilt:
+  <input id="tiltSlider" type="range" min="0" max="60" value="22">
+  <span id="tiltValue">22°</span>
+  &nbsp;&nbsp;Ring Color:
+  <input id="colorPicker" type="color" value="#00eaff">
+</div>
+
+<script>
+/* state */
+let tiltDeg = 22;
+let baseColor = '#00eaff';
+let rings = []; // track ring positions and colors
+let currentChain = []; // current chain being built
+let allChains = []; // all completed chains
+let lastClickTime = 0;
+const DOUBLE_CLICK_DELAY = 300; // ms
+
+/* DOM refs */
+const tiltSlider = document.getElementById('tiltSlider');
+const tiltValue = document.getElementById('tiltValue');
+const colorPicker = document.getElementById('colorPicker');
+
+/* create 3D plane container */
+const plane = document.createElement('div');
+plane.id = 'plane';
+plane.style.transform = `rotateX(${tiltDeg}deg)`;
+document.body.appendChild(plane);
+
+/* helpers to produce darker/lighter shades for gradient */
+function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
+function hexToRgb(hex){
+  hex = hex.replace('#','');
+  if(hex.length === 3) hex = hex.split('').map(c=>c+c).join('');
+  const n = parseInt(hex,16);
+  return [(n>>16)&255, (n>>8)&255, n&255];
+}
+function rgbToHex(r,g,b){
+  return '#' + [r,g,b].map(x=>x.toString(16).padStart(2,'0')).join('');
+}
+function shiftColor(hex, amt){ // amt in -100..100
+  const [r,g,b] = hexToRgb(hex);
+  const f = (c) => clamp(Math.round(c + (amt/100)*255), 0, 255);
+  return rgbToHex(f(r), f(g), f(b));
+}
+
+/* place ring on click */
+document.addEventListener('click', (e) => {
+  // ignore clicks on controls
+  if (e.target.closest('.controller')) return;
+
+  const now = Date.now();
+  const isDoubleClick = (now - lastClickTime) < DOUBLE_CLICK_DELAY;
+  lastClickTime = now;
+
+  const centerX = e.clientX;
+  const centerY = e.clientY;
+
+  const ring = document.createElement('div');
+  ring.className = 'ring';
+  ring.style.left = (centerX - 60) + 'px';
+  ring.style.top  = (centerY - 60) + 'px';
+  ring.style.animation = 'ringEntrance 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards';
+  
+  // Vary spin speed slightly for visual interest
+  const speedVariation = 0.8 + Math.random() * 0.6; // 0.8 to 1.4x speed
+
+  // build gradient from baseColor and variants
+  const cA = baseColor;
+  const cB = shiftColor(baseColor, -30); // darker slice
+  const cC = shiftColor(baseColor, -10); // less dark
+  const gradient = `conic-gradient(from 0deg, ${cA} 0deg, ${cB} 40%, ${cC} 70%, ${cA} 100%)`;
+
+  // fill element (rotates)
+  const fill = document.createElement('div');
+  fill.className = 'fill';
+  fill.style.background = gradient;
+  fill.style.animationDuration = `${2.5 / speedVariation}s`;
+
+  // inner hole to create donut shape
+  const hole = document.createElement('div');
+  hole.className = 'hole';
+  hole.style.background = getComputedStyle(document.documentElement).getPropertyValue('--bg') || '#0b6623';
+
+  // optional subtle stroke/edge
+  const stroke = document.createElement('div');
+  stroke.className = 'stroke';
+
+  ring.appendChild(fill);
+  ring.appendChild(hole);
+  ring.appendChild(stroke);
+
+  plane.appendChild(ring);
+
+  // track ring data
+  const ringData = {
+    x: centerX,
+    y: centerY,
+    color: baseColor,
+    gradient: gradient
+  };
+  
+  rings.push(ringData);
+  currentChain.push(ringData);
+
+  // draw connector to previous ring in current chain
+  if(currentChain.length > 1){
+    const prev = currentChain[currentChain.length - 2];
+    const curr = ringData;
+    
+    // calculate distance between ring centers
+    const dx = curr.x - prev.x;
+    const dy = curr.y - prev.y;
+    const distance = Math.sqrt(dx*dx + dy*dy);
+    const angle = Math.atan2(dy, dx) * (180/Math.PI);
+    
+    // ring radius is 60px, so outer edge starts at radius distance
+    const ringRadius = 60;
+    
+    // connector starts from outer edge of prev ring
+    const startX = prev.x + Math.cos(angle * Math.PI/180) * ringRadius;
+    const startY = prev.y + Math.sin(angle * Math.PI/180) * ringRadius;
+    
+    // connector ends at outer edge of curr ring
+    const connectorLength = distance - ringRadius * 2;
+    
+    const connector = document.createElement('div');
+    connector.className = 'connector';
+    connector.style.left = startX + 'px';
+    connector.style.top = (startY - 6) + 'px'; // offset for height
+    connector.style.width = connectorLength + 'px';
+    connector.style.transform = `rotate(${angle}deg)`;
+    
+    // use gradient similar to rings
+    const linearGrad = `linear-gradient(90deg, ${cA} 0%, ${cB} 40%, ${cC} 70%, ${cA} 100%)`;
+    connector.style.background = linearGrad;
+    
+    plane.appendChild(connector);
+  }
+
+  // if double-click, end current chain and start new one
+  if(isDoubleClick && currentChain.length > 0){
+    allChains.push([...currentChain]);
+    currentChain = [];
+    
+    // visual feedback for chain end
+    ring.style.boxShadow = '0 0 20px rgba(255, 255, 255, 0.8)';
+    setTimeout(() => {
+      ring.style.boxShadow = '';
+    }, 500);
+  }
+});
+
+/* slider updates tilt for the entire plane */
+tiltSlider.addEventListener('input', () => {
+  tiltDeg = tiltSlider.value;
+  tiltValue.textContent = tiltDeg + '°';
+  plane.style.transform = `rotateX(${tiltDeg}deg)`;
+});
+
+/* color picker update */
+colorPicker.addEventListener('input', () => {
+  baseColor = colorPicker.value;
+});
+</script>
+</body>
+</html>
